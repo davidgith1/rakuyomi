@@ -214,6 +214,25 @@ fn current_thread_name() -> Option<String> {
     std::thread::current().name().map(|s| s.to_string())
 }
 
+/// Clears `guard` if the server task it points to has already finished
+/// (e.g. the axum accept loop died from an OS-level socket hiccup while
+/// the app was backgrounded/frozen). Without this, `nativeIsRunning` and
+/// the `ALREADY_RUNNING` check in `nativeStart` would keep reporting a
+/// dead server as running forever, since only the process being killed
+/// used to reset this state.
+fn reap_if_dead(guard: &mut Option<ServerState>) {
+    let dead = guard
+        .as_ref()
+        .is_some_and(|server| server.server_handle.is_finished());
+
+    if dead {
+        if let Some(server) = guard.take() {
+            log::warn!("rakuyomi server task had exited unexpectedly; clearing stale state");
+            drop(server.runtime);
+        }
+    }
+}
+
 /// Start the server.
 ///
 /// # Safety
@@ -277,6 +296,8 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
             return status::INTERNAL_ERROR;
         }
     };
+
+    reap_if_dead(&mut guard);
 
     if guard.is_some() {
         return status::ALREADY_RUNNING;
@@ -481,7 +502,9 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeIsRun
     _class: JClass<'caller>,
 ) -> jint {
     match state().try_lock() {
-        Ok(g) => {
+        Ok(mut g) => {
+            reap_if_dead(&mut g);
+
             if g.is_some() {
                 1
             } else {
