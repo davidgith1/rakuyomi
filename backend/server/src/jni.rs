@@ -389,6 +389,12 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStop<
         return status::NOT_RUNNING;
     };
 
+    // Release the lock before the (up to multi-second) blocking shutdown
+    // drain below. `server` is already fully owned here, so holding the
+    // guard any longer only serves to make concurrent nativeStart calls
+    // fail with INTERNAL_ERROR instead of actually starting a new server.
+    drop(guard);
+
     if let Some(tx) = server.shutdown_tx.take() {
         let _ = tx.send(());
     }
