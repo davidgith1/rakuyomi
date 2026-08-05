@@ -150,6 +150,17 @@ pub fn init_cookie_store() {
 }
 
 pub fn init_cookie_store_with_path(path: &Path) -> Result<()> {
+    if COOKIE_STORE.get().is_some() {
+        // Already initialized — this happens when the server is stopped
+        // and restarted within the same process (e.g. the Android bridge
+        // app restarting its HTTP server without the whole process being
+        // killed). Reuse the existing in-memory store instead of failing:
+        // re-reading the file would just discard any cookies gathered
+        // since the last init, and treating this as fatal broke every
+        // restart within a long-lived process.
+        return Ok(());
+    }
+
     let store = CookieStoreData::load_from_file(path).unwrap_or_default();
     SYNC_HASH.get_or_init(|| RwLock::new(sync_hash_from_store(&store)));
     COOKIE_STORE
