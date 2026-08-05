@@ -227,7 +227,6 @@ fn reap_if_dead(guard: &mut Option<ServerState>) {
 
     if dead {
         if let Some(server) = guard.take() {
-            diag_log_default("reap_if_dead: task had finished, clearing stale state");
             log::warn!("rakuyomi server task had exited unexpectedly; clearing stale state");
             drop(server.runtime);
         }
@@ -290,13 +289,9 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
         PathBuf::from(&home_path_str)
     };
 
-    let _ = DIAG_HOME_PATH.set(home_path.clone());
-    diag_log(&home_path, "nativeStart: called, acquiring lock");
-
     let mut guard = match state().try_lock() {
         Ok(g) => g,
         Err(_) => {
-            diag_log(&home_path, "nativeStart: lock busy, returning INTERNAL_ERROR");
             error!("server state lock is busy");
             return status::INTERNAL_ERROR;
         }
@@ -305,7 +300,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
     reap_if_dead(&mut guard);
 
     if guard.is_some() {
-        diag_log(&home_path, "nativeStart: guard already Some, returning ALREADY_RUNNING");
         return status::ALREADY_RUNNING;
     }
 
@@ -327,19 +321,10 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
 
     let (tx, rx) = shutdown_pair();
     let home_path_for_task = home_path.clone();
-    let home_path_for_diag = home_path.clone();
-    diag_log(&home_path_for_diag, "nativeStart: spawning task");
     let server_handle = runtime.spawn(async move {
-        diag_log(&home_path_for_diag, "task: entered, calling pick_listener()");
         match pick_listener().await {
-            Ok(listener) => {
-                diag_log(
-                    &home_path_for_diag,
-                    &format!("task: pick_listener() OK ({}), calling build_state()", listener.describe()),
-                );
-                match crate::build_state(home_path_for_task).await {
+            Ok(listener) => match crate::build_state(home_path_for_task).await {
                 Ok(state) => {
-                    diag_log(&home_path_for_diag, "task: build_state() OK, serving");
                     let app = crate::build_router(state);
                     match listener {
                         crate::listener::ResolvedListener::Tcp(l) => {
@@ -349,7 +334,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
                             if let Err(e) =
                                 axum::serve(l, app).with_graceful_shutdown(shutdown).await
                             {
-                                diag_log(&home_path_for_diag, &format!("task: server error: {e}"));
                                 error!("server error: {e}");
                             }
                         }
@@ -360,23 +344,14 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
                             if let Err(e) =
                                 axum::serve(l, app).with_graceful_shutdown(shutdown).await
                             {
-                                diag_log(&home_path_for_diag, &format!("task: server error: {e}"));
                                 error!("server error: {e}");
                             }
                         }
                     }
-                    diag_log(&home_path_for_diag, "task: axum::serve() returned, task ending");
                 }
-                Err(e) => {
-                    diag_log(&home_path_for_diag, &format!("task: build_state() FAILED: {e:#}"));
-                    error!("failed to build state: {e}");
-                }
-            }
-            }
-            Err(e) => {
-                diag_log(&home_path_for_diag, &format!("task: pick_listener() FAILED: {e:#}"));
-                error!("failed to pick listener: {e}");
-            }
+                Err(e) => error!("failed to build state: {e}"),
+            },
+            Err(e) => error!("failed to pick listener: {e}"),
         }
     });
 
@@ -388,34 +363,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStart
 
     log_start(&home_path, port);
     status::OK
-}
-
-/// TEMPORARY diagnostic: appends a timestamped line to a plain file in the
-/// shared home directory, since Rust's stderr logger doesn't reliably reach
-/// logcat on this device. Safe to leave as a no-op-ish append; remove once
-/// the restart-hang bug is root-caused.
-fn diag_log(home_path: &std::path::Path, msg: &str) {
-    use std::io::Write;
-    let path = home_path.join("rakuyomi_bridge_diag.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{now}] {msg}");
-    }
-}
-
-static DIAG_HOME_PATH: OnceLock<PathBuf> = OnceLock::new();
-
-fn diag_log_default(msg: &str) {
-    if let Some(home_path) = DIAG_HOME_PATH.get() {
-        diag_log(home_path, msg);
-    }
 }
 
 fn log_start(home_path: &std::path::Path, port: jint) {
@@ -433,17 +380,12 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStop<
     _class: JClass<'caller>,
 ) -> jint {
     crate::init_logging();
-    diag_log_default("nativeStop: called, acquiring lock");
     let mut guard = match state().try_lock() {
         Ok(g) => g,
-        Err(_) => {
-            diag_log_default("nativeStop: lock busy, returning INTERNAL_ERROR");
-            return status::INTERNAL_ERROR;
-        }
+        Err(_) => return status::INTERNAL_ERROR,
     };
 
     let Some(mut server) = guard.take() else {
-        diag_log_default("nativeStop: guard already None, returning NOT_RUNNING");
         return status::NOT_RUNNING;
     };
 
@@ -453,7 +395,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStop<
     // fail with INTERNAL_ERROR instead of actually starting a new server.
     drop(guard);
 
-    diag_log_default("nativeStop: signaling shutdown, starting drain wait");
     if let Some(tx) = server.shutdown_tx.take() {
         let _ = tx.send(());
     }
@@ -470,7 +411,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeStop<
     // Drop the runtime, which cancels any remaining tasks.
     drop(server.runtime);
 
-    diag_log_default("nativeStop: runtime dropped, returning OK");
     log::info!("rakuyomi server stopped");
     status::OK
 }
@@ -577,9 +517,6 @@ pub extern "system" fn Java_git_shin_rakuyomi_1bridge_RakuyomiServer_nativeIsRun
                 0
             }
         }
-        Err(_) => {
-            diag_log_default("nativeIsRunning: lock busy, returning -1");
-            -1
-        }
+        Err(_) => -1,
     }
 }
