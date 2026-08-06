@@ -158,6 +158,25 @@ pub fn init_cookie_store_with_path(path: &Path) -> Result<()> {
         // re-reading the file would just discard any cookies gathered
         // since the last init, and treating this as fatal broke every
         // restart within a long-lived process.
+        //
+        // Guard against silently binding to the wrong file though: if a
+        // restart ever passes a genuinely different path, that's a real
+        // inconsistency worth failing loudly on rather than quietly
+        // keeping the old (now stale) cookie file.
+        let new_path = path.to_string_lossy().to_string();
+        match COOKIE_STORE_PATH.get() {
+            Some(existing_path) if existing_path != &new_path => {
+                return Err(anyhow::anyhow!(
+                    "cookie store already initialized with a different path ({existing_path} != {new_path})"
+                ));
+            }
+            Some(_) => {}
+            None => {
+                // Store was initialized via init_cookie_store() (no path)
+                // — backfill the path so save_cookies_to_disk() works.
+                let _ = COOKIE_STORE_PATH.set(new_path);
+            }
+        }
         return Ok(());
     }
 
