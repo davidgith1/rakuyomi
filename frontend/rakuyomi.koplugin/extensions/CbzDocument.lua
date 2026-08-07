@@ -1,13 +1,6 @@
 local PdfDocument = require('document/pdfdocument')
 local logger = require("logger")
-local rapidjson = require("rapidjson")
-local Paths = require('Paths')
-local execute_binary_fast = require("utils/executeBinaryFast")
-
--- Environment variable for overriding the command
-local CBZ_METADATA_READER_COMMAND_OVERRIDE = os.getenv('RAKUYOMI_CBZ_METADATA_READER_COMMAND_OVERRIDE')
-local CBZ_METADATA_READER_COMMAND_WORKING_DIRECTORY = os.getenv('RAKUYOMI_CBZ_METADATA_READER_WORKING_DIRECTORY')
-
+local Backend = require("Backend")
 
 local function getString(metadata, key)
   local value = metadata[key]
@@ -35,17 +28,12 @@ local CbzDocument = PdfDocument:extend {
 function CbzDocument:getDocumentProps()
   local base_props = PdfDocument.getDocumentProps(self)
 
-  local json_content = self:_getComicBookInfoJSONFromBinary()
-  if not json_content then
-    logger.warn("CbzDocument: No JSON content received from binary.")
+  local metadata = self:_getComicBookInfoFromBackend()
+  if not metadata then
     return base_props
   end
 
-  local info = self:_parseMetadata(json_content)
-  if not info then
-    logger.warn("CbzDocument: Failed to parse JSON content.")
-    return base_props
-  end
+  local info = self:_mapMetadata(metadata)
 
   -- Merge the parsed metadata with the base properties
   for key, value in pairs(info) do
@@ -55,59 +43,31 @@ function CbzDocument:getDocumentProps()
   return base_props
 end
 
---- Calls the external Rust binary to get simplified metadata JSON.
+--- Asks the already-running backend server to read the CBZ's ComicInfo.xml.
 --- @private
---- @return string|nil The JSON string or nil if an error occurred.
-function CbzDocument:_getComicBookInfoJSONFromBinary()
+--- @return table|nil The simplified metadata table, or nil if unavailable.
+function CbzDocument:_getComicBookInfoFromBackend()
   local file_path = self.file
 
-  -- Determine the command to run
-  local command_path
-  if CBZ_METADATA_READER_COMMAND_OVERRIDE then
-    command_path = CBZ_METADATA_READER_COMMAND_OVERRIDE
-    logger.dbg("CbzDocument: Using overridden command:", command_path)
-  else
-    command_path = Paths.getPluginDirectory() .. "/cbz_metadata_reader"
-    logger.dbg("CbzDocument: Using default command path:", command_path)
-  end
-
-  logger.dbg("CbzDocument: Executing binary via FFI:", command_path, "with file:", file_path)
-
-  local json_content, err = execute_binary_fast(command_path, file_path, CBZ_METADATA_READER_COMMAND_WORKING_DIRECTORY)
-
-  if not json_content or json_content == "" or json_content == "{}" then
-    if err then
-      logger.warn("CbzDocument: Command execution failed:", err)
-    else
-      logger.dbg("CbzDocument: Rust binary returned no valid JSON metadata for", file_path)
-    end
+  local ok, response = pcall(Backend.getCbzMetadata, file_path)
+  if not ok then
+    logger.warn("CbzDocument: Failed to request metadata from backend:", response)
     return nil
   end
 
-  logger.dbg("CbzDocument: Successfully received JSON from binary for", file_path)
-  return json_content
+  if response.type ~= 'SUCCESS' then
+    logger.dbg("CbzDocument: Backend returned no metadata for", file_path, ":", response.message)
+    return nil
+  end
+
+  return response.body
 end
 
---- Parses the simplified metadata JSON content from the Rust binary.
+--- Maps the backend's simplified metadata table into KOReader's document props shape.
 --- @private
---- @param json_content string The JSON content to parse.
---- @return table|nil The parsed metadata table or nil if parsing failed.
-function CbzDocument:_parseMetadata(json_content)
-  -- Use rapidjson for decoding
-  if not rapidjson or not rapidjson.decode then
-    logger.warn("CbzDocument: rapidjson library/decode function not available, cannot parse metadata JSON.")
-    return
-  end
-
-  -- Use pcall for safety when decoding JSON
-  local ok, parsed_data = pcall(rapidjson.decode, json_content)
-
-  if not ok or type(parsed_data) ~= "table" then
-    logger.warn("CbzDocument: Failed to parse JSON with rapidjson or result is not a table:", parsed_data) -- Error message in parsed_data on failure
-    return nil
-  end
-
-  local metadata = parsed_data
+--- @param metadata table The simplified metadata table returned by the backend.
+--- @return table The mapped document props.
+function CbzDocument:_mapMetadata(metadata)
   local info = {}
 
   info.title = getString(metadata, "title")

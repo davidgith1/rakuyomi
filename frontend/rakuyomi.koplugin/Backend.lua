@@ -384,6 +384,19 @@ function Backend.findOrphanOrReadFiles(modeInvalid)
   })
 end
 
+--- Reads a CBZ's ComicInfo.xml, simplified for KOReader's document properties.
+--- Runs on the already-running server instead of spawning a binary, since
+--- spawning arbitrary binaries at runtime is blocked on Android.
+--- @param file_path string The path to the CBZ file.
+--- @return SuccessfulResponse<table>|ErrorResponse
+function Backend.getCbzMetadata(file_path)
+  return Backend.requestJson({
+    path = "/cbz-metadata",
+    query_params = { path = file_path },
+    timeout = 5,
+  })
+end
+
 --- Delete file
 --- @param filename string The name of the file to delete.
 --- @return SuccessfulResponse<nil>|ErrorResponse

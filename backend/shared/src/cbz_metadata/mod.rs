@@ -269,3 +269,78 @@ pub fn non_empty_string(s: String) -> Option<String> {
         Some(s)
     }
 }
+
+/// Simplified, reader-friendly view of a CBZ's `ComicInfo.xml`, shaped for
+/// KOReader's document properties (title/author/series/etc.). Shared between
+/// the standalone `cbz_metadata_reader` binary and the server's HTTP endpoint
+/// so both stay in sync.
+#[derive(Serialize, Debug, Default)]
+pub struct SimplifiedComicMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_index: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publication_year: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+}
+
+/// Reads `ComicInfo.xml` from the CBZ at `file_path` and simplifies it into
+/// [`SimplifiedComicMetadata`].
+pub fn read_simplified_metadata(file_path: &Path) -> Result<SimplifiedComicMetadata> {
+    let comic_info = ComicInfo::from_file(file_path)?;
+
+    Ok(simplify_metadata(comic_info))
+}
+
+fn simplify_metadata(comic_info: ComicInfo) -> SimplifiedComicMetadata {
+    let mut simplified = SimplifiedComicMetadata {
+        title: non_empty_string(comic_info.title),
+        series: non_empty_string(comic_info.series),
+        series_index: non_empty_string(comic_info.number),
+        publisher: non_empty_string(comic_info.publisher),
+        language: non_empty_string(comic_info.language_iso),
+        notes: non_empty_string(comic_info.summary),
+        keywords: non_empty_string(comic_info.genre),
+        ..Default::default()
+    };
+
+    // Combine writer, penciller, inker as authors
+    let mut authors = Vec::new();
+    if !comic_info.writer.is_empty() {
+        authors.push(comic_info.writer);
+    }
+
+    if !comic_info.penciller.is_empty() && !authors.contains(&comic_info.penciller) {
+        authors.push(comic_info.penciller);
+    }
+
+    if !comic_info.inker.is_empty() && !authors.contains(&comic_info.inker) {
+        authors.push(comic_info.inker);
+    }
+
+    if !authors.is_empty() {
+        simplified.authors = Some(authors.join(" & "));
+    }
+
+    if comic_info.year > 0 {
+        simplified.publication_year = Some(comic_info.year);
+    }
+
+    simplified.rating = comic_info.community_rating.map(|r| r.into());
+
+    simplified
+}

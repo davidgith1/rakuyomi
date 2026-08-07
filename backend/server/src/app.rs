@@ -26,7 +26,7 @@ use shared::usecases::install_update::cleanup_update_backup;
 use crate::build_info::{get_build_info, DEFAULT_SETTINGS_JSON};
 use crate::listener::{pick_listener, ResolvedListener};
 use crate::state::State;
-use crate::{cookie, job, manga, playlists, settings, source, system, update};
+use crate::{cbz_metadata, cookie, job, manga, playlists, settings, source, system, update};
 
 /// Initialize logging. Safe to call multiple times; only the first invocation
 /// installs the logger.
@@ -150,6 +150,7 @@ impl Log for StderrLogger {
 pub fn build_router(state: State) -> Router {
     let router = Router::new()
         .route("/health-check", get(health_check))
+        .merge(cbz_metadata::routes())
         .merge(cookie::routes())
         .merge(manga::routes())
         .merge(playlists::routes())
