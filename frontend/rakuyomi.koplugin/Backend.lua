@@ -107,7 +107,7 @@ function Backend.requestJson(request)
     logger.err("Request failed with status code", response.status, "and body", parsed_body)
     local error_message = parsed_body.message
     if error_message == nil then
-      error_message = parsed_body.error or "Request failed (status: " .. response.status .. ")"
+      error_message = (parsed_body.error or "Request failed (status: ") .. response.status .. ")"
     end
 
     return { type = 'ERROR', status = response.status, message = error_message }
@@ -219,7 +219,8 @@ end
 --- @class SourceInformation
 --- @field id string The ID of the source.
 --- @field name string The name of the source.
---- @field version number The version of the source.
+--- @field version string|number The version of the source, as published by the source: a number for Aidoku sources, a string for LNReader sources.
+--- @field languages string[] The languages of the source: language codes for Aidoku sources, language names for LNReader sources. Empty when the source list publishes no language information.
 --- @field source_of_source string|nil The domain source load source.
 
 --- @class Manga
@@ -240,6 +241,7 @@ end
 --- @field scanlator string? The scanlation group that worked on this chapter.
 --- @field chapter_num number? The chapter number.
 --- @field volume_num number? The volume that this chapter belongs to, if known.
+--- @field last_updated number? The timestamp (in seconds since epoch) of when this chapter was published by the source, if known.
 --- @field read boolean If this chapter was read to its end.
 --- @field last_read number? The timestamp (in seconds since epoch) of when this chapter was last read to its end.
 --- @field downloaded boolean If this chapter was already downloaded to the storage.
@@ -602,6 +604,19 @@ function Backend.updateLastReadChapter(source_id, manga_id, chapter_id)
   })
 end
 
+--- Gets the ComicInfo metadata of a downloaded chapter.
+---@param source_id string
+---@param manga_id string
+---@param chapter_id string
+---@return SuccessfulResponse<ChapterMetadata>|ErrorResponse
+function Backend.getChapterMetadata(source_id, manga_id, chapter_id)
+  return Backend.requestJson({
+    path = "/mangas/" ..
+        source_id .. "/" .. util.urlEncode(manga_id) .. "/chapters/" .. util.urlEncode(chapter_id) .. "/metadata",
+    method = "GET",
+  })
+end
+
 --- Marks the chapter as read.
 --- @param value boolean|nil
 --- @return SuccessfulResponse<nil>|ErrorResponse
@@ -682,6 +697,16 @@ function Backend.setSourceStoredSettings(source_id, stored_settings)
     path = "/installed-sources/" .. source_id .. "/stored-settings",
     method = 'POST',
     body = stored_settings,
+  })
+end
+
+--- @class SourceUsage: { invokes: integer, total_duration_ms: integer, last_duration_ms: integer, peak_wasm_memory_bytes: integer, last_error: string|nil, disk_bytes: integer }
+
+--- Gets the runtime resource usage of every installed source, keyed by source id.
+--- @return SuccessfulResponse<table<string, SourceUsage>>|ErrorResponse
+function Backend.getSourceUsages()
+  return Backend.requestJson({
+    path = "/installed-sources/usage",
   })
 end
 
@@ -846,13 +871,17 @@ end
 --- @field url string|nil
 --- @field username string|nil
 
+--- @class SourceList
+--- @field url string The URL of the list.
+--- @field type ("aidoku"|"lnreader"|"mangayomi"|"keiyoushi") The kind of index the URL points to. Defaults to "aidoku".
+
 --- @class Settings
 --- @field chapter_sorting_mode ChapterSortingMode
 --- @field preload_chapters number
 --- @field library_view_mode LibraryViewMode
 --- @field search_view_mode SearchViewMode
 --- @field chapter_title_format ChapterTitleFormat
---- @field source_lists string[]
+--- @field source_lists SourceList[]
 --- @field languages string[]
 --- @field storage_size_limit string
 --- @field storage_path string|nil
