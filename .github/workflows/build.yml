@@ -14,6 +14,9 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
   build:
+    # The build matrix is expensive, so only start it after the tests pass:
+    # the ci job runs the full test suite once for this workflow.
+    needs: [ci]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -156,6 +159,7 @@ jobs:
       run: bash scripts/build-rust-android.sh ${{ matrix.abi }}
 
   generate-settings-schema:
+    needs: [ci]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -214,6 +218,14 @@ jobs:
       with:
         path: build
         merge-multiple: true
+    - name: Combine android plugin zips
+      run: |
+        # The per-ABI android jobs all produce the same plugin zip (the
+        # libserver.so lives in the companion app, not in the plugin), so
+        # merge them back into a single rakuyomi-android.zip for release.
+        if compgen -G "build/rakuyomi-android-*.zip" > /dev/null; then
+          cp "$(ls build/rakuyomi-android-*.zip | head -1)" build/rakuyomi-android.zip
+        fi
     - name: Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

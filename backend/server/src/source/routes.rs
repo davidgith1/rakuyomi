@@ -4,7 +4,7 @@ use axum::extract::{Path, State as StateExtractor};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
-use shared::model::SourceId;
+use shared::model::{InstallOutcome, SourceId};
 use shared::resource_usage::SourceUsage;
 use shared::settings::SourceSettingValue;
 use shared::source::model::SettingDefinition;
@@ -58,6 +58,13 @@ struct InstallSourceParams {
     source_id: String,
 }
 
+#[derive(Deserialize)]
+struct InstallSourceRequest {
+    source_of_source: String,
+    #[serde(default)]
+    languages: Option<Vec<String>>,
+}
+
 async fn install_source(
     StateExtractor(State {
         source_manager,
@@ -65,18 +72,24 @@ async fn install_source(
         ..
     }): StateExtractor<State>,
     Path(InstallSourceParams { source_id }): Path<InstallSourceParams>,
-    Json(source_of_source): Json<String>,
-) -> Result<Json<()>, AppError> {
-    usecases::install_source(
-        &mut *source_manager.lock().await,
+    Json(InstallSourceRequest {
+        source_of_source,
+        languages,
+    }): Json<InstallSourceRequest>,
+) -> Result<Json<InstallOutcome>, AppError> {
+    let source_lists = settings.lock().await.source_lists.clone();
+    // The use case locks the manager inside a blocking task: the eager probe
+    // (JS evaluation / runtime boot) must not run on the async worker.
+    let outcome = usecases::install_source(
         &source_manager,
-        &settings.lock().await.source_lists,
+        &source_lists,
         SourceId::new(source_id),
         source_of_source,
+        languages,
     )
     .await?;
 
-    Ok(Json(()))
+    Ok(Json(outcome))
 }
 
 async fn list_installed_sources(
@@ -101,8 +114,19 @@ async fn uninstall_source(
 
 async fn get_source_setting_definitions(
     SourceExtractor(source): SourceExtractor,
-) -> Json<Vec<SettingDefinition>> {
-    Json(usecases::get_source_setting_definitions(&source))
+) -> Result<Json<Vec<SettingDefinition>>, AppError> {
+    // LNReader/MangaYomi sources probe lazily on first use; the probe
+    // evaluates JS / boots a runtime, so run it off the async worker and
+    // propagate its outcome instead of silently returning no definitions.
+    let definitions = tokio::task::spawn_blocking(move || {
+        source.probe()?;
+        Ok::<_, anyhow::Error>(usecases::get_source_setting_definitions(&source))
+    })
+    .await
+    .map_err(|e| AppError::Other(anyhow::anyhow!("settings probe task failed: {e}")))?
+    .map_err(AppError::Other)?;
+
+    Ok(Json(definitions))
 }
 
 async fn get_source_stored_settings(
