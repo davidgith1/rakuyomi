@@ -17,7 +17,6 @@ require("RakuyomiShared")
 local disable_logging = G_reader_settings:isTrue("rakuyomi_disable_logging")
 if disable_logging then logger:setLevel(logger.levels.err) end
 
-local ok, android = pcall(require, "android")
 local Rakuyomi = InputContainer:extend({
   name = "rakuyomi"
 })

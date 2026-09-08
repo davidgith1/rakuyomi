@@ -11,11 +11,12 @@ local Backend = require("Backend")
 local ErrorDialog = require("ErrorDialog")
 local LoadingDialog = require("LoadingDialog")
 local Menu = require("widgets/Menu")
+local NetworkMgr = require("ui/network/manager")
 local _ = require("gettext+")
 local Testing = require("testing")
 local CheckboxDialog = require("CheckboxDialog")
 local format_languages = require("utils/formatLanguages")
-local hasValue = require("utils/hasValue")
+local langNames = require("utils/languageNames")
 ---@diagnostic disable-next-line: different-requires
 local util = require("util")
 
@@ -83,17 +84,21 @@ end
 --- impossible to uncheck in the dialog.
 --- @param current string[]
 --- @param options { id: string }[]
+--- @param transform fun(id: string): string
 --- @return string[]
-local function sanitize_selection(current, options)
+local function sanitize_selection(current, options, transform)
   local valid = {}
   for _, option in ipairs(options) do
     valid[option.id] = true
   end
 
   local cleaned = {}
+  local seen = {}
   for _, id in ipairs(current or {}) do
-    if valid[id] then
-      cleaned[#cleaned + 1] = id
+    local key = transform(id)
+    if valid[key] and not seen[key] then
+      seen[key] = true
+      cleaned[#cleaned + 1] = key
     end
   end
   return cleaned
@@ -142,8 +147,8 @@ function AvailableSourcesListing:init()
 
   self:extractAvailableLangs()
   self:extractAvailableRepos()
-  self.langs_selected = sanitize_selection(self.langs_selected, self.langs)
-  self.repos_selected = sanitize_selection(self.repos_selected, self.repos)
+  self.langs_selected = sanitize_selection(self.langs_selected, self.langs, langNames.normalize)
+  self.repos_selected = sanitize_selection(self.repos_selected, self.repos, function(id) return id end)
   self:patchTitleBar()
 
   -- self:updateItems()
@@ -179,6 +184,12 @@ end
 --- Builds the list of selectable languages from the user-configured
 --- languages in the reader settings (managed in the plugin's Settings screen)
 --- plus the languages found in the available sources.
+---
+--- The dialog displays each entry's `name` (e.g. "English", "Chinese"), so
+--- the list is sorted by displayed label, with the normalised `id` as a
+--- deterministic tie-breaker for any two entries that share a name. Sorting
+--- by the underlying code alone would order e.g. "Arabic", "English",
+--- "French", "Chinese" — which is not alphabetical by what users see.
 --- @private
 function AvailableSourcesListing:extractAvailableLangs()
   local langs_set = {}
@@ -188,24 +199,36 @@ function AvailableSourcesListing:extractAvailableLangs()
   -- global reader settings; read them from there so both screens share one
   -- source of truth.
   for _, lang in ipairs(G_reader_settings:readSetting("rakuyomi_languages", {})) do
-    langs_set[lang] = true
-    table.insert(langs_list, lang)
+    local key = langNames.normalize(lang)
+    if not langs_set[key] then
+      langs_set[key] = true
+      table.insert(langs_list, key)
+    end
   end
   for _, source_information in ipairs(self.available_sources) do
     for _, lang in ipairs(source_information.languages) do
-      if not langs_set[lang] then
-        langs_set[lang] = true
-        table.insert(langs_list, lang)
+      local key = langNames.normalize(lang)
+      if not langs_set[key] then
+        langs_set[key] = true
+        table.insert(langs_list, key)
       end
     end
   end
 
-  table.sort(langs_list)
-
+  -- Build the id+name pairs first so we can sort by the displayed label.
+  -- The `id` is the canonical key the dialog stores, the filter compares
+  -- against, and `sanitize_selection` validates; ordering is purely a
+  -- display concern, so changing it cannot break selection/normalisation.
   self.langs = {}
   for _, lang in ipairs(langs_list) do
-    table.insert(self.langs, { id = lang, name = lang })
+    table.insert(self.langs, { id = lang, name = langNames.nameFor(lang) })
   end
+  table.sort(self.langs, function(a, b)
+    if a.name == b.name then
+      return a.id < b.id
+    end
+    return a.name < b.name
+  end)
 end
 
 --- Builds the list of selectable repositories (source list keys) from the
@@ -248,7 +271,7 @@ function AvailableSourcesListing:filterAvailableSources()
   for __, source_information in ipairs(self.available_sources) do
     local lang_matches = #self.langs_selected == 0 or #source_information.languages == 0
     for _, lang in ipairs(source_information.languages) do
-      if langs_set[lang] then
+      if langs_set[langNames.normalize(lang)] then
         lang_matches = true
         break
       end
@@ -327,7 +350,9 @@ function AvailableSourcesListing:patchTitleBar()
         face = SMALL_FONT_FACE,
         bordersize = 0,
         enabled = true,
-        text_font_size = left_icon_size,
+        width = left_icon_size,
+        height = left_icon_size,
+        text_font_size = 16,
         text_font_bold = false,
         callback = function()
           self:showSelectLanguage()
@@ -347,7 +372,9 @@ function AvailableSourcesListing:patchTitleBar()
         face = SMALL_FONT_FACE,
         bordersize = 0,
         enabled = true,
-        text_font_size = left_icon_size,
+        width = left_icon_size,
+        height = left_icon_size,
+        text_font_size = 16,
         text_font_bold = false,
         callback = function()
           self:showSelectRepos()
@@ -503,25 +530,64 @@ end
 
 --- Asks which languages of a multi-source keiyoushi APK to install, then
 --- installs the selection.
+---
+--- `outcome.languages` carries the raw identifiers the keiyoushi probe
+--- bundled (see `install_source.rs` `bundled_languages` and the
+--- `bundled.contains(lang.as_str())` validation). Those exact strings are
+--- what the backend expects when we call `Backend.installSource`, so we
+--- must keep `id = lang` unchanged — normalising here would have the
+--- backend reject e.g. `"en-US"` as not bundled.
+---
+--- The dialog label, however, is `langNames.nameFor(lang)` which strips
+--- BCP-47 subtags. When an APK bundles variants like `en` and `en-US`,
+--- both rows would display as `"English"` and become indistinguishable.
+--- When two or more raw IDs share a displayed name, we append the raw
+--- code in parentheses to disambiguate; unique labels stay clean.
 --- @private
 --- @param source_information SourceInformation
 --- @param outcome InstallOutcomeSelectionRequired
 function AvailableSourcesListing:showLanguageSelection(source_information, outcome)
+  local name_counts = {}
+  for _, lang in ipairs(outcome.languages) do
+    local display = langNames.nameFor(lang)
+    name_counts[display] = (name_counts[display] or 0) + 1
+  end
+
   local options = {}
   for _, lang in ipairs(outcome.languages) do
+    local display = langNames.nameFor(lang)
+    if name_counts[display] > 1 then
+      display = display .. " (" .. lang .. ")"
+    end
     table.insert(options, {
       id = lang,
-      name = lang,
+      name = display,
     })
   end
 
   -- Pre-check the language of the tapped entry; fall back to checking
   -- every language when the entry carries none.
+  -- Build a normalized lookup of outcome languages so that equivalent
+  -- codes from the source metadata (e.g. "en") match raw outcome IDs
+  -- with subtags (e.g. "en-US"). We store the raw outcome IDs (not the
+  -- source metadata IDs) in `current` because the backend validates
+  -- languages by exact string against `bundled.contains()`.
+  local outcome_ids = {}
+  for _, lang in ipairs(outcome.languages) do
+    local key = langNames.normalize(lang)
+    outcome_ids[key] = outcome_ids[key] or {}
+    table.insert(outcome_ids[key], lang)
+  end
+
   local current = {}
+  local current_set = {}
   if source_information.languages then
     for _, lang in ipairs(source_information.languages) do
-      if hasValue(outcome.languages, lang) then
-        table.insert(current, lang)
+      for _, outcome_lang in ipairs(outcome_ids[langNames.normalize(lang)] or {}) do
+        if not current_set[outcome_lang] then
+          current_set[outcome_lang] = true
+          table.insert(current, outcome_lang)
+        end
       end
     end
   end
@@ -571,50 +637,94 @@ function AvailableSourcesListing:refreshAfterInstall(source_information)
 end
 
 --- Fetches and shows the available sources. Must be called from a function wrapped with `Trapper:wrap()`.
+---
+--- When the fetch fails while the device is offline, the WiFi-reconnect
+--- dance from `ChapterListing:downloadChapter` (issue #277) is replayed:
+--- `NetworkMgr:beforeWifiAction` (which honors the "action when Wi-Fi is
+--- off" setting) brings the device back online and the fetch is retried
+--- once; the error is only shown when reconnecting fails or the device is
+--- already online.
 --- @param onReturnCallback any
-function AvailableSourcesListing:fetchAndShow(onReturnCallback)
-  local installed_sources_response = Backend.listInstalledSources()
-  if installed_sources_response.type == 'ERROR' then
-    ErrorDialog:show(installed_sources_response.message)
+--- @param retried boolean? whether this call is a retry after a WiFi reconnect
+--- @return nil
+function AvailableSourcesListing:fetchAndShow(onReturnCallback, retried)
+  -- Establish our own Trapper context (mirroring `ChapterListing:downloadChapter`)
+  -- so the retry callback from `NetworkMgr:beforeWifiAction` /
+  -- `scheduleConnectivityCheck` can re-enter this function asynchronously:
+  -- `LoadingDialog:showAndRun` requires a `Trapper:wrap()` context.
+  Trapper:wrap(function()
+    local installed_sources_response = Backend.listInstalledSources()
+    if installed_sources_response.type == 'ERROR' then
+      ErrorDialog:show(installed_sources_response.message)
 
-    return
-  end
+      return
+    end
 
-  local installed_sources = installed_sources_response.body
+    local installed_sources = installed_sources_response.body
 
-  local available_sources_response = LoadingDialog:showAndRun("Fetching available sources...", function()
-    return Backend.listAvailableSources()
+    local available_sources_response = LoadingDialog:showAndRun("Fetching available sources...", function()
+      return Backend.listAvailableSources()
+    end)
+
+    if available_sources_response.type == 'ERROR' then
+      if not NetworkMgr:isConnected() then
+        if retried then
+          -- The reconnect retry also failed while offline: stop here.
+          ErrorDialog:show(available_sources_response.message)
+
+          return
+        end
+
+        -- The fetch failed because we're offline. Try to get back online
+        -- (honoring the "action when Wi-Fi is off" setting), then retry once.
+        local connection_pending = NetworkMgr.pending_connection
+        local wifi_enable = NetworkMgr:beforeWifiAction(function()
+          self:fetchAndShow(onReturnCallback, true)
+        end)
+
+        if wifi_enable == false then
+          ErrorDialog:show(available_sources_response.message)
+        elseif wifi_enable == nil and connection_pending then
+          -- beforeWifiAction dropped our retry callback (EBUSY) because a
+          -- previous connection attempt is still ongoing. Queue the retry for
+          -- when it finishes instead of silently giving up.
+          NetworkMgr:scheduleConnectivityCheck(function()
+            self:fetchAndShow(onReturnCallback, true)
+          end)
+        end
+
+        return
+      end
+
+      ErrorDialog:show(available_sources_response.message)
+
+      return
+    end
+
+    local available_sources = available_sources_response.body
+
+    local settings_response = Backend.getSettings()
+    if settings_response.type == 'ERROR' then
+      ErrorDialog:show(settings_response.message)
+
+      return
+    end
+    local settings = settings_response.body
+
+    local ui = AvailableSourcesListing:new {
+      installed_sources = installed_sources,
+      available_sources = available_sources,
+      settings = settings,
+      langs_selected = G_reader_settings:readSetting("rakuyomi_langs_selected", {}),
+      repos_selected = G_reader_settings:readSetting("rakuyomi_repos_selected", {}),
+      on_return_callback = onReturnCallback,
+      covers_fullscreen = true, -- hint for UIManager:_repaint()
+    }
+    ui.on_return_callback = onReturnCallback
+    UIManager:show(ui)
+
+    Testing:emitEvent("available_sources_listing_shown")
   end)
-
-  if available_sources_response.type == 'ERROR' then
-    ErrorDialog:show(available_sources_response.message)
-
-    return
-  end
-
-  local available_sources = available_sources_response.body
-
-  local settings_response = Backend.getSettings()
-  if settings_response.type == 'ERROR' then
-    ErrorDialog:show(settings_response.message)
-
-    return
-  end
-  local settings = settings_response.body
-
-  local ui = AvailableSourcesListing:new {
-    installed_sources = installed_sources,
-    available_sources = available_sources,
-    settings = settings,
-    langs_selected = G_reader_settings:readSetting("rakuyomi_langs_selected", {}),
-    repos_selected = G_reader_settings:readSetting("rakuyomi_repos_selected", {}),
-    on_return_callback = onReturnCallback,
-    covers_fullscreen = true, -- hint for UIManager:_repaint()
-  }
-  ui.on_return_callback = onReturnCallback
-  UIManager:show(ui)
-
-  Testing:emitEvent("available_sources_listing_shown")
 end
 
 return AvailableSourcesListing
