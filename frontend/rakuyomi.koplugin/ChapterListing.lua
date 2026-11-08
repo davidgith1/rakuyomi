@@ -710,6 +710,13 @@ function ChapterListing:markChapterAs(chapter, value)
   end)
 end
 
+-- Mirror Database::mark_chapter_as_read in the in-memory chapter, same as
+-- markChapterAs: marking read sets last_read = now, unread clears it.
+local function setLocalReadState(chapter, value)
+  chapter.read = value
+  chapter.last_read = value and os.time() or nil
+end
+
 --- @private
 --- @param chapters Chapter[]
 --- @param value boolean
@@ -732,7 +739,7 @@ function ChapterListing:markChaptersAs(chapters, value)
 
     if mark_response.type == 'ERROR' then
       for i = 1, mark_response.completed or 0 do
-        chapters[i].read = value
+        setLocalReadState(chapters[i], value)
       end
       if (mark_response.completed or 0) > 0 then
         self:updateItems()
@@ -744,7 +751,7 @@ function ChapterListing:markChaptersAs(chapters, value)
     end
 
     for __, chapter in ipairs(chapters) do
-      chapter.read = value
+      setLocalReadState(chapter, value)
     end
     self:updateItems()
   end)
