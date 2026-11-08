@@ -270,7 +270,7 @@ function CookieSyncView:startPairing()
     title = _("Enter Telegram Bot Server URL"),
     description = _("Enter the URL of your Telegram Bot server. "
       .. "You will get a pairing code to send to the bot."),
-    input = self.server_url or "https://rakuyomi.tachibana-shin.deno.net",
+    input = self.server_url or "https://rakuyomi-cookie-bot.tachibshin.workers.dev",
     input_hint = _("https://your-bot.deno.dev"),
     buttons = {
       {
@@ -436,7 +436,7 @@ function CookieSyncView:showCookies()
 
   local domains = resp.body.domains or {}
   local lines = {}
-  for _, entry in ipairs(domains) do
+  for __, entry in ipairs(domains) do
     local domain = entry[1]
     local info = entry[2]
     table.insert(lines, domain .. " (" .. #info.cookies .. " cookies)")

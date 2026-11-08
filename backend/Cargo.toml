@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["vendor/epub-builder"]
 members = [
     "shared",
     "server",
@@ -10,7 +11,7 @@ members = [
 ]
 
 [workspace.dependencies]
-wasmi = "1.1.0"
+wasmi = "2.0.0"
 
 [profile.dev]
 incremental = true
