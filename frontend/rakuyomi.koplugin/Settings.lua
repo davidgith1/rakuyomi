@@ -23,6 +23,7 @@ local Backend = require("Backend")
 local ErrorDialog = require("ErrorDialog")
 local SettingItem = require('widgets/SettingItem')
 local formatBytes = require("utils/formatBytes")
+local PageOverlap = require("utils/pageOverlap")
 
 local ffi = require("ffi")
 
@@ -301,6 +302,17 @@ Settings.setting_value_definitions = {
     }
   },
   {
+    'rakuyomi_page_overlap',
+    {
+      type = 'integer',
+      title = _('Page overlap in continuous mode (%)'),
+      min_value = 0,
+      max_value = PageOverlap.MAX_PERCENT,
+      default = 0,
+      is_local = true,
+    }
+  },
+  {
     'rakuyomi_hide_btn_prev',
     {
       type = 'boolean',
@@ -333,8 +345,26 @@ Settings.setting_value_definitions = {
     }
   },
   {
+    'rakuyomi_disable_read_history',
+    {
+      type = 'boolean',
+      title = _("Don't add chapters to KOReader's reading history"),
+      default = false,
+      is_local = true,
+    }
+  },
+  {
     nil,
     { type = 'divider', title = _('Recommended reader settings') }
+  },
+  {
+    'rakuyomi_black_reader_background',
+    {
+      type = 'boolean',
+      title = _('Use black background while reading manga'),
+      default = false,
+      is_local = true,
+    }
   },
   {
     'rakuyomi_page_margin',

@@ -1,3 +1,94 @@
+## [1.44.1](https://github.com/tachibana-shin/rakuyomi/compare/v1.44.0...v1.44.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **tracking:** push local progress on link when ahead of tracker ([#381](https://github.com/tachibana-shin/rakuyomi/issues/381)) ([99d501d](https://github.com/tachibana-shin/rakuyomi/commit/99d501db7d164bdb9094dd01a6e44bb3246cc0ad))
+
+# [1.44.0](https://github.com/tachibana-shin/rakuyomi/compare/v1.43.4...v1.44.0) (2026-10-19)
+
+
+### Bug Fixes
+
+* **build:** pin rquickjs to 0.12.2 so bindgen is enabled ([#386](https://github.com/tachibana-shin/rakuyomi/issues/386)) ([942c4ec](https://github.com/tachibana-shin/rakuyomi/commit/942c4ecc2eb53e2d6661b24fa83d381c967cb532))
+* **reader:** only enforce recommended reader settings when opted in ([#388](https://github.com/tachibana-shin/rakuyomi/issues/388)) ([63c3dd9](https://github.com/tachibana-shin/rakuyomi/commit/63c3dd93e2c386f5ed71dd699f0f5b7fe26a3787)), closes [#378](https://github.com/tachibana-shin/rakuyomi/issues/378) [#379](https://github.com/tachibana-shin/rakuyomi/issues/379)
+* **ui:** cap source language lists to keep menu post_text short ([#387](https://github.com/tachibana-shin/rakuyomi/issues/387)) ([0a90969](https://github.com/tachibana-shin/rakuyomi/commit/0a90969c44531dd82e79c77b2f2dccbf5905093e)), closes [#374](https://github.com/tachibana-shin/rakuyomi/issues/374)
+* **update:** create update download temp file next to the plugin directory ([#390](https://github.com/tachibana-shin/rakuyomi/issues/390)) ([4ca2937](https://github.com/tachibana-shin/rakuyomi/commit/4ca29379dfb0eb44b7dab1cfcd24a0d675dae205)), closes [#362](https://github.com/tachibana-shin/rakuyomi/issues/362)
+
+
+### Features
+
+* **reader:** add configurable page overlap in continuous mode ([#389](https://github.com/tachibana-shin/rakuyomi/issues/389)) ([9f30a45](https://github.com/tachibana-shin/rakuyomi/commit/9f30a452d83de5a192b2e4f41d4d10d98bd01854)), closes [#376](https://github.com/tachibana-shin/rakuyomi/issues/376)
+
+## [1.43.4](https://github.com/tachibana-shin/rakuyomi/compare/v1.43.3...v1.43.4) (2026-10-11)
+
+
+### Performance Improvements
+
+* **cookie-bot:** stop registering bot commands on every cold isolate ([30d8002](https://github.com/tachibana-shin/rakuyomi/commit/30d80029c0566587edc415dd23a57561d948a720))
+
+## [1.43.3](https://github.com/tachibana-shin/rakuyomi/compare/v1.43.2...v1.43.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **cookie-bot:** migrate Telegram cookie bot from Deno Deploy to Cloudflare Workers ([#380](https://github.com/tachibana-shin/rakuyomi/issues/380)) ([9f50e82](https://github.com/tachibana-shin/rakuyomi/commit/9f50e825d901831a57338ca4db2d89d08d40d9b5))
+
+## [1.43.2](https://github.com/tachibana-shin/rakuyomi/compare/v1.43.1...v1.43.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* close button for available sources ([#377](https://github.com/tachibana-shin/rakuyomi/issues/377)) ([7a3ab6b](https://github.com/tachibana-shin/rakuyomi/commit/7a3ab6b0797ddc2d7da4dce0d9561086fded79f9))
+
+## [1.43.1](https://github.com/tachibana-shin/rakuyomi/compare/v1.43.0...v1.43.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* closing custom dialog ([#375](https://github.com/tachibana-shin/rakuyomi/issues/375)) ([e5c3b37](https://github.com/tachibana-shin/rakuyomi/commit/e5c3b37b94c53f93fe4c8575936f6fbfd78c307a))
+
+# [1.43.0](https://github.com/tachibana-shin/rakuyomi/compare/v1.42.2...v1.43.0) (2026-10-06)
+
+
+### Features
+
+* add optional black manga reader background ([#1](https://github.com/tachibana-shin/rakuyomi/issues/1)) ([#372](https://github.com/tachibana-shin/rakuyomi/issues/372)) ([11f672b](https://github.com/tachibana-shin/rakuyomi/commit/11f672b4d9f484f1786ff2c853a03802782887ac))
+
+## [1.42.2](https://github.com/tachibana-shin/rakuyomi/compare/v1.42.1...v1.42.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **source:** reload an Aidoku source when its settings change ([#371](https://github.com/tachibana-shin/rakuyomi/issues/371)) ([856eb06](https://github.com/tachibana-shin/rakuyomi/commit/856eb06fbab89703dbe767846921b920d7a9bb57))
+
+## [1.42.1](https://github.com/tachibana-shin/rakuyomi/compare/v1.42.0...v1.42.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* don't use `_` for space param ([e78e255](https://github.com/tachibana-shin/rakuyomi/commit/e78e255f03cfafadd7ac1037870c26ca0f452457))
+
+# [1.42.0](https://github.com/tachibana-shin/rakuyomi/compare/v1.41.8...v1.42.0) (2026-09-23)
+
+
+### Bug Fixes
+
+* keep in-memory chapter last_read in sync on mark read/unread ([#348](https://github.com/tachibana-shin/rakuyomi/issues/348)) ([#357](https://github.com/tachibana-shin/rakuyomi/issues/357)) ([44ca5c9](https://github.com/tachibana-shin/rakuyomi/commit/44ca5c93167550badd08f0bda45900bd8f9c5a47))
+* report error when no chapters are selected for download ([#356](https://github.com/tachibana-shin/rakuyomi/issues/356)) ([14040fe](https://github.com/tachibana-shin/rakuyomi/commit/14040fe6989a24eede59324a1212899ccaa48c95)), closes [#347](https://github.com/tachibana-shin/rakuyomi/issues/347) [#347](https://github.com/tachibana-shin/rakuyomi/issues/347) [#347](https://github.com/tachibana-shin/rakuyomi/issues/347)
+
+
+### Features
+
+* support downloading specific chapters and ranges ([#355](https://github.com/tachibana-shin/rakuyomi/issues/355)) ([3620d55](https://github.com/tachibana-shin/rakuyomi/commit/3620d559e5be2b54b4e593a9bafe3ff3c242fcf6)), closes [#344](https://github.com/tachibana-shin/rakuyomi/issues/344) [#344](https://github.com/tachibana-shin/rakuyomi/issues/344)
+
+## [1.41.8](https://github.com/tachibana-shin/rakuyomi/compare/v1.41.7...v1.41.8) (2026-09-08)
+
+
+### Bug Fixes
+
+* **aidoku:** sync process_page_image on lazy boot ([#342](https://github.com/tachibana-shin/rakuyomi/issues/342)) ([82087f7](https://github.com/tachibana-shin/rakuyomi/commit/82087f74f42d88ebbb12b3df388df61f7c46874c))
+
 ## [1.41.7](https://github.com/tachibana-shin/rakuyomi/compare/v1.41.6...v1.41.7) (2026-09-08)
 
 

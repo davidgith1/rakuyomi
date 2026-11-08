@@ -23,6 +23,7 @@ local NetworkMgr = require("ui/network/manager")
 local Backend = require("Backend")
 local DownloadChapter = require("jobs/DownloadChapter")
 local DownloadUnreadChapters = require("jobs/DownloadUnreadChapters")
+local DownloadSpecificChapters = require("jobs/DownloadSpecificChapters")
 local DownloadUnreadChaptersJobDialog = require("DownloadUnreadChaptersJobDialog")
 local Icons = require("Icons")
 local Menu = require("widgets/Menu")
@@ -136,7 +137,7 @@ function ChapterListing:updateChapterList()
   if self._refresh_langs_selected == true then
     local langs_set = {}
     local langs_list = {}
-    for _, chapter in ipairs(self.raw_chapters) do
+    for __, chapter in ipairs(self.raw_chapters) do
       local lang = chapter.lang or "unknown"
       if not langs_set[lang] then
         langs_set[lang] = true
@@ -148,7 +149,7 @@ function ChapterListing:updateChapterList()
     if #langs_list >= 2 then
       table.sort(langs_list)
       self.langs = {}
-      for _, lang in ipairs(langs_list) do
+      for __, lang in ipairs(langs_list) do
         table.insert(self.langs, { id = lang, name = lang })
       end
       local key = self:hashMangaId() .. "_lang"
@@ -287,7 +288,7 @@ function ChapterListing:loadSavedScanlatorPreference()
   self._scanlator_loaded = true
 
   if response.type == 'SUCCESS' and response.body then
-    for _, available_scanlator in ipairs(self.available_scanlators) do
+    for __, available_scanlator in ipairs(self.available_scanlators) do
       if available_scanlator == response.body then
         self.selected_scanlator = response.body
         break
@@ -335,7 +336,7 @@ end
 -- ---@param chapter Chapter
 -- ---@return Chapter
 -- function ChapterListing:findRootChapter(chapter)
---   for _, root in ipairs(self.chapters) do
+--   for __, root in ipairs(self.chapters) do
 --     if root.id == chapter.id then
 --       return root
 --     end
@@ -574,7 +575,7 @@ function ChapterListing:onContextMenuChoice(item)
           UIManager:close(dialog_context_menu)
 
           self:revokeChapter(chapter, false)
-          self:downloadChapter(chapter, nil, function(_)
+          self:downloadChapter(chapter, nil, function(__)
             UIManager:show(InfoMessage:new { text = _("Chapter refreshed") })
           end)
         end
@@ -631,7 +632,7 @@ function ChapterListing:onContextMenuChoice(item)
           if chapter.downloaded then
             self:revokeChapter(chapter)
           else
-            self:downloadChapter(chapter, nil, function(_)
+            self:downloadChapter(chapter, nil, function(__)
               UIManager:show(InfoMessage:new { text = _("Chapter downloaded") })
             end)
           end
@@ -692,7 +693,19 @@ function ChapterListing:markChapterAs(chapter, value)
       return
     end
 
-    chapter.read = value
+    -- Mirror the backend state (Database::mark_chapter_as_read): marking read
+    -- writes last_read = now, marking unread clears it. Keeping the in-memory
+    -- copy in sync matters because findLastRead picks the resume chapter from
+    -- `chapter.last_read or chapter.read` and the chapter info line also reads
+    -- `chapter.last_read`; otherwise a chapter just marked unread still counts
+    -- as read until the next full chapter refresh.
+    if value then
+      chapter.read = true
+      chapter.last_read = os.time()
+    else
+      chapter.read = false
+      chapter.last_read = nil
+    end
     self:updateItems()
   end)
 end
@@ -1278,6 +1291,14 @@ function ChapterListing:openMenu()
 
           self:onDownloadUnreadChapters()
         end
+      },
+      {
+        text = Icons.FA_DOWNLOAD .. " " .. _("Download specific chapters…"),
+        callback = function()
+          UIManager:close(dialog)
+
+          self:onDownloadSpecificChapters()
+        end
       }
     }
   }
@@ -1500,6 +1521,71 @@ function ChapterListing:createDownloadJob(amount)
     scanlator = self.selected_scanlator,
     langs = self.langs_selected,
   })
+end
+
+--- Opens the dialog for downloading specific chapters by number or range (e.g. "1-4, 10, 12").
+--- @return nil
+function ChapterListing:onDownloadSpecificChapters()
+  local input_dialog
+  input_dialog = InputDialog:new {
+    title = _("Download specific chapters..."),
+    input_type = "text",
+    input_hint = _("1-4, 10, 12"),
+    description = _("Download the chapters matching the given numbers or ranges, separated by commas.") ..
+        "\n\n" .. _("Example: 1-4, 10, 12") .. "\n\n" ..
+        _("Only chapters of the currently selected language are downloaded."),
+    buttons = {
+      {
+        {
+          text = _("Cancel"),
+          id = "close",
+          callback = function()
+            UIManager:close(input_dialog)
+          end,
+        },
+        {
+          text = _("Download"),
+          is_enter_default = true,
+          callback = function()
+            UIManager:close(input_dialog)
+
+            local chapter_ranges = input_dialog:getInputText()
+            if chapter_ranges == nil or chapter_ranges:match("^%s*$") then
+              ErrorDialog:show(_("Enter at least one chapter number or range!"))
+
+              return
+            end
+
+            local job = DownloadSpecificChapters:new({
+              source_id = self.manga.source.id,
+              manga_id = self.manga.id,
+              chapter_ranges = chapter_ranges,
+              langs = self.langs_selected,
+            })
+            if job then
+              ---@diagnostic disable-next-line: undefined-field
+              local dialog = DownloadUnreadChaptersJobDialog:new({
+                show_parent = self,
+                job = job,
+                dismiss_callback = function()
+                  self:updateChapterList()
+                end
+              })
+
+              dialog:show()
+            else
+              UIManager:show(InfoMessage:new {
+                text = _("Failed to start download. Check the chapter numbers or ranges."),
+                timeout = 2,
+              })
+            end
+          end,
+        },
+      }
+    }
+  }
+
+  UIManager:show(input_dialog)
 end
 
 function ChapterListing:onDownloadAllChapters()
