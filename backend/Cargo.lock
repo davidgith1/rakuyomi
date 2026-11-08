@@ -1436,7 +1436,6 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 [[package]]
 name = "epub-builder"
 version = "0.8.3"
-source = "git+https://github.com/tachibana-shin/epub-builder.git?branch=main#6610754445587c7b347d415e8dfc482a01880c42"
 dependencies = [
  "chrono",
  "html-escape 0.2.15",
